@@ -1,0 +1,32 @@
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
+smtp_server = 'smtp.gmail.com'
+smtp_port = 587
+smtp_user = 'your_email@gmail.com'  # Remplacez par votre adresse email
+smtp_password = 'your_app_specific_password'  # Utilisez un mot de passe spécifique à l'application
+
+admin_email = 'admin@yourdomain.com'
+
+try:
+    # Configuration du serveur SMTP
+    server = smtplib.SMTP(smtp_server, smtp_port)
+    server.starttls()  # Active TLS
+    server.login(smtp_user, smtp_password)
+
+    # Composition de l'email
+    msg = MIMEMultipart()
+    msg['From'] = smtp_user
+    msg['To'] = admin_email
+    msg['Subject'] = 'Test email'
+    body = 'Ceci est un test.'
+    msg.attach(MIMEText(body, 'plain'))
+
+    # Envoi de l'email
+    server.sendmail(smtp_user, admin_email, msg.as_string())
+    print("Email envoyé avec succès")
+    server.quit()
+
+except Exception as e:
+    print(f"Erreur lors de l'envoi de l'email : {e}")

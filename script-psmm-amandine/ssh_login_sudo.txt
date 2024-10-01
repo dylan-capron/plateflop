@@ -1,0 +1,57 @@
+#!/usr/bin/env python3
+
+import paramiko
+from getpass import getpass
+
+def ssh_execute_sudo_command(hostname, username, ssh_password, sudo_password, command):
+    # Création d'un objet SSHClient
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+    try:
+        # Connexion SSH avec le mot de passe SSH
+        ssh.connect(hostname, username=username, password=ssh_password)
+
+        # Préparation de la commande avec sudo
+        # Utilisation de -S pour lire le mot de passe à partir de l'entrée standard
+        sudo_command = f"echo {sudo_password} | sudo -S {command}"
+
+        # Exécution de la commande sudo
+        stdin, stdout, stderr = ssh.exec_command(sudo_command)
+
+        # Lecture de la sortie et des erreurs
+        output = stdout.read().decode('utf-8')
+        error_output = stderr.read().decode('utf-8')
+
+        # Affichage de la sortie de la commande
+        if output:
+            print(f"Résultat de la commande '{command}' avec sudo:\n{output}")
+        if error_output:
+            print(f"Erreur de la commande '{command}' avec sudo:\n{error_output}")
+
+    except paramiko.AuthenticationException:
+        print("Erreur d'authentification. Veuillez vérifier vos informations d'identification.")
+    except paramiko.SSHException as e:
+        print(f"Erreur SSH: {e}")
+    except Exception as e:
+        print(f"Erreur inattendue: {e}")
+    finally:
+        # Fermeture de la connexion SSH
+        ssh.close()
+
+if __name__ == "__main__":
+    # Informations d'authentification pour le serveur SSH
+    hostname = '192.168.10.185'  # Remplacez par l'adresse IP de votre serveur
+    username = 'monitor'  # Remplacez par le nom d'utilisateur SSH
+
+    # Saisie sécurisée du mot de passe SSH
+    ssh_password = getpass("Entrez le mot de passe SSH : ")
+
+    # Saisie sécurisée du mot de passe sudo
+    sudo_password = getpass("Entrez le mot de passe sudo : ")
+
+    # Commande shell à exécuter avec sudo
+    command_to_execute = "apt update"  # Exemple de commande à exécuter avec sudo, vous pouvez la remplacer
+
+    # Appel de la fonction pour exécuter la commande via SSH avec sudo
+    ssh_execute_sudo_command(hostname, username, ssh_password, sudo_password, command_to_execute)

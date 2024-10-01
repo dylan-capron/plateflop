@@ -1,0 +1,73 @@
+#!/usr/bin/env python3
+
+import json
+import requests
+import logging
+import psutil
+from datetime import datetime
+
+# Configuration du logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# URL du Webhook Google Chat (remplacez par votre URL)
+WEBHOOK_URL = 'https://chat.googleapis.com/v1/spaces/XXXXXX/messages?key=XXXXXX&token=XXXXXX'  # Remplacez avec votre URL
+
+# Configuration des seuils
+CPU_THRESHOLD = 70  # En pourcentage
+RAM_THRESHOLD = 80  # En pourcentage
+DISK_THRESHOLD = 90  # En pourcentage
+
+def get_system_status():
+    """Récupère l'état des ressources du serveur (CPU, RAM, DISK)."""
+    # Utilisation CPU
+    cpu_usage = psutil.cpu_percent(interval=1)
+
+    # Utilisation RAM
+    memory_info = psutil.virtual_memory()
+    ram_usage = memory_info.percent
+
+    # Utilisation du disque (racine "/")
+    disk_info = psutil.disk_usage('/')
+    disk_usage = disk_info.percent
+
+    return cpu_usage, ram_usage, disk_usage
+
+def send_to_google_chat(message):
+    """Envoie un message formaté dans le Google Chat Space via le webhook."""
+    headers = {'Content-Type': 'application/json'}
+    data = {"text": message}
+    
+    try:
+        response = requests.post(WEBHOOK_URL, headers=headers, data=json.dumps(data))
+        if response.status_code == 200:
+            logging.info("Message envoyé à Google Chat avec succès.")
+        else:
+            logging.error(f"Erreur lors de l'envoi du message à Google Chat : {response.status_code}")
+    except Exception as e:
+        logging.error(f"Erreur lors de l'appel au webhook Google Chat : {e}")
+
+def monitor_system_and_send_alert():
+    """Vérifie les seuils du système et envoie un message à Google Chat si nécessaire."""
+    cpu_usage, ram_usage, disk_usage = get_system_status()
+    
+    # Message à envoyer dans Google Chat
+    message = f"**État du serveur au {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}**\n"
+    message += f"CPU Utilisation : {cpu_usage}%\n"
+    message += f"RAM Utilisation : {ram_usage}%\n"
+    message += f"Disque Utilisation : {disk_usage}%\n"
+    
+    # Vérification des seuils et ajout d'alertes si nécessaire
+    if cpu_usage > CPU_THRESHOLD:
+        message += f":warning: Alerte : Utilisation CPU élevée ({cpu_usage}%)\n"
+    
+    if ram_usage > RAM_THRESHOLD:
+        message += f":warning: Alerte : Utilisation RAM élevée ({ram_usage}%)\n"
+    
+    if disk_usage > DISK_THRESHOLD:
+        message += f":warning: Alerte : Utilisation Disque élevée ({disk_usage}%)\n"
+    
+    # Envoyer le message dans le Google Chat Space
+    send_to_google_chat(message)
+
+if __name__ == "__main__":
+    monitor_system_and_send_alert()

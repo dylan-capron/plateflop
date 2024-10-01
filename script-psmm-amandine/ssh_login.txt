@@ -1,0 +1,52 @@
+#!/usr/bin/env python3
+
+import paramiko
+from getpass import getpass  # Importation de getpass pour saisir le mot de passe en toute sécurité
+
+def ssh_execute_command(hostname, username, command, password):
+    # Création d'un objet SSHClient
+    ssh = paramiko.SSHClient()
+    # Ignorer la vérification de l'hôte pour simplifier l'exemple (à utiliser avec prudence dans un environnement réel)
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+    try:
+        # Connexion SSH avec mot de passe
+        ssh.connect(hostname, username=username, password=password)
+
+        # Exécution de la commande shell
+        stdin, stdout, stderr = ssh.exec_command(command)
+
+        # Lecture de la sortie de la commande
+        output = stdout.read().decode('utf-8')
+        error_output = stderr.read().decode('utf-8')
+
+        # Affichage de la sortie de la commande
+        if output:
+            print(f"Résultat de la commande '{command}':\n{output}")
+        if error_output:
+            print(f"Erreur de la commande '{command}':\n{error_output}")
+
+    except paramiko.AuthenticationException:
+        print("Erreur d'authentification. Veuillez vérifier vos informations d'identification.")
+    except paramiko.SSHException as e:
+        print(f"Erreur SSH: {e}")
+    except Exception as e:
+        print(f"Erreur inattendue: {e}")
+    finally:
+        # Fermeture de la connexion SSH
+        ssh.close()
+
+# Utilisation du script avec la fonction principale
+if __name__ == "__main__":
+    # Informations d'authentification pour le serveur SSH
+    hostname = '192.168.10.185'  # Remplacez par l'adresse IP de votre serveur
+    username = 'monitor'  # Remplacez par le nom d'utilisateur SSH
+
+    # Saisie sécurisée du mot de passe
+    password = getpass("Entrez le mot de passe SSH : ")
+
+    # Commande shell à exécuter
+    command_to_execute = "df -h"  # Exemple de commande, vous pouvez la remplacer
+
+    # Appel de la fonction pour exécuter la commande via SSH avec le mot de passe
+    ssh_execute_command(hostname, username, command_to_execute, password)

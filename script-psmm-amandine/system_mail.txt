@@ -1,0 +1,136 @@
+#!/usr/bin/env python3
+
+import mysql.connector
+import paramiko
+import logging
+from datetime import datetime, timedelta
+import smtplib
+from email.mime.text import MIMEText
+import os
+
+# Configuration du logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Configuration des seuils d'alerte
+CPU_THRESHOLD = 70.0  # Seuil d'utilisation CPU
+RAM_THRESHOLD = 80.0  # Seuil d'utilisation RAM
+DISK_THRESHOLD = 90.0  # Seuil d'utilisation disque
+
+# Configuration de l'email
+SMTP_SERVER = 'smtp.yourmailserver.com'  # Serveur SMTP
+SMTP_PORT = 587  # Port SMTP
+SMTP_USER = 'admin@yourdomain.com'  # Votre email
+SMTP_PASSWORD = 'your_smtp_password'  # Mot de passe email
+ADMIN_EMAIL = 'admin@yourdomain.com'  # Email de l'administrateur
+
+# Connexion à la base de données
+db_config = {
+    'host': '192.168.10.152',
+    'user': 'your_db_user',  # Remplacez par votre utilisateur DB
+    'password': 'your_db_password',  # Remplacez par votre mot de passe DB
+    'database': 'plateflop'
+}
+
+# Connexion SSH au serveur
+ssh_host = '192.168.10.185'
+ssh_user = 'your_ssh_user'  # Remplacez par votre utilisateur SSH
+ssh_password = 'your_ssh_password'  # Remplacez par votre mot de passe SSH
+
+# Fichier pour stocker le dernier envoi d'e-mail
+LAST_EMAIL_FILE = '/path/to/last_email_time.txt'  # Remplacez par le chemin correct
+
+def send_alert_email(cpu_usage, ram_usage, disk_usage):
+    """Envoie un e-mail d'alerte à l'administrateur système."""
+    subject = "Alerte : Utilisation des ressources système élevée"
+    body = f"""
+    Alerte ! Les seuils d'utilisation des ressources ont été dépassés :
+    
+    - Utilisation CPU : {cpu_usage}%
+    - Utilisation RAM : {ram_usage}%
+    - Utilisation Disque : {disk_usage}%
+    """
+
+    msg = MIMEText(body)
+    msg['Subject'] = subject
+    msg['From'] = SMTP_USER
+    msg['To'] = ADMIN_EMAIL
+
+    try:
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+            server.starttls()
+            server.login(SMTP_USER, SMTP_PASSWORD)
+            server.send_message(msg)
+        logging.info("E-mail d'alerte envoyé avec succès.")
+        
+        # Enregistrer le moment de l'envoi de l'email
+        with open(LAST_EMAIL_FILE, 'w') as f:
+            f.write(str(datetime.now()))
+            
+    except Exception as e:
+        logging.error(f"Erreur lors de l'envoi de l'e-mail : {e}")
+
+def can_send_email():
+    """Vérifie si le dernier e-mail a été envoyé il y a plus d'une heure."""
+    if os.path.exists(LAST_EMAIL_FILE):
+        with open(LAST_EMAIL_FILE, 'r') as f:
+            last_email_time = datetime.fromisoformat(f.read().strip())
+            if datetime.now() - last_email_time < timedelta(hours=1):
+                return False
+    return True
+
+try:
+    conn = mysql.connector.connect(**db_config)
+    cursor = conn.cursor()
+
+    # Connexion SSH au serveur
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.connect(ssh_host, username=ssh_user, password=ssh_password)
+
+    # Récupération des informations système
+    cpu_command = "top -bn1 | grep 'Cpu(s)'"
+    ram_command = "free -m"
+    disk_command = "df -h"
+
+    # Exécution des commandes
+    stdin, stdout, stderr = ssh.exec_command(cpu_command)
+    cpu_info = stdout.read().decode().strip()
+
+    stdin, stdout, stderr = ssh.exec_command(ram_command)
+    ram_info = stdout.read().decode().strip()
+
+    stdin, stdout, stderr = ssh.exec_command(disk_command)
+    disk_info = stdout.read().decode().strip()
+
+    # Traitement des informations
+    cpu_usage = float(cpu_info.split(",")[0].split()[1])  # Extrait le pourcentage CPU
+    ram_total = int(ram_info.splitlines()[1].split()[1])  # Total RAM en Mo
+    ram_used = int(ram_info.splitlines()[1].split()[2])  # RAM utilisée en Mo
+    ram_usage = (ram_used / ram_total) * 100  # Pourcentage d'utilisation RAM
+    disk_usage = float(disk_info.splitlines()[1].split()[4][:-1])  # Utilisation disque
+
+    # Insertion des données dans la base de données
+    timestamp = datetime.now()
+    cursor.execute(
+        "INSERT INTO system_status (timestamp, cpu_usage, ram_total, ram_used, disk_usage) VALUES (%s, %s, %s, %s, %s)",
+        (timestamp, cpu_usage, ram_total, ram_used, disk_usage)
+    )
+
+    # Suppression des données plus anciennes que 72 heures
+    delete_time = timestamp - timedelta(hours=72)
+    cursor.execute("DELETE FROM system_status WHERE timestamp < %s", (delete_time,))
+
+    conn.commit()
+    logging.info("Statut système inséré avec succès dans la base de données.")
+
+    # Vérification des seuils et envoi de l'e-mail si nécessaire
+    if (cpu_usage > CPU_THRESHOLD or ram_usage > RAM_THRESHOLD or disk_usage > DISK_THRESHOLD) and can_send_email():
+        send_alert_email(cpu_usage, ram_usage, disk_usage)
+
+except Exception as e:
+    logging.error(f"Erreur lors de l'exécution du script : {e}")
+
+finally:
+    cursor.close()
+    conn.close()
+    ssh.close()

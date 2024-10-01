@@ -1,0 +1,56 @@
+import mysql.connector
+import paramiko
+import logging
+from datetime import datetime
+
+# Configuration du logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Connexion à la base de données
+db_config = {
+    'host': '192.168.10.152',
+    'user': 'your_db_user',  # Remplacez par votre utilisateur DB
+    'password': 'your_db_password',  # Remplacez par votre mot de passe DB
+    'database': 'plateflop'
+}
+
+try:
+    conn = mysql.connector.connect(**db_config)
+    cursor = conn.cursor()
+
+    # Connexion SSH au serveur FTP
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.connect('192.168.10.185', username='your_ftp_user', password='your_ftp_password')
+
+    # Récupération des logs
+    sftp = ssh.open_sftp()
+    log_file_path = '/var/log/proftpd/proftpd.log'
+    with sftp.file(log_file_path, 'r') as log_file:
+        logs = log_file.readlines()
+
+    # Insertion des erreurs dans la base de données
+    for log in logs:
+        # Si le log contient 'Erreur détectée' ou 'Login failed'
+        if 'Erreur détectée' in log or 'Login failed' in log:  
+            # Extraire le type d'erreur et le message
+            error_type = "FTP Error"
+            error_message = log.strip()
+            timestamp = datetime.now()  # Heure de l'insertion
+            
+            # Insertion dans la table error_log
+            cursor.execute(
+                "INSERT INTO error_log (error_type, error_message, timestamp) VALUES (%s, %s, %s)",
+                (error_type, error_message, timestamp)
+            )
+
+    conn.commit()
+    logging.info("Erreurs insérées avec succès dans la table error_log.")
+
+except Exception as e:
+    logging.error(f"Erreur lors de l'exécution du script : {e}")
+
+finally:
+    cursor.close()
+    conn.close()
+    ssh.close()

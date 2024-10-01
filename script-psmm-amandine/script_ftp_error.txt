@@ -1,0 +1,54 @@
+import paramiko
+import logging
+
+# Configuration du fichier de log
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Informations de connexion SSH
+hostname = '192.168.10.185'
+port = 22
+username = 'monitor'
+password = 'your_password'
+remote_log_path = '/var/log/proftpd/proftpd.log'
+local_log_path = 'proftpd.log'
+
+def retrieve_logs_via_ssh():
+    try:
+        # Création de la connexion SSH
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(hostname, port, username, password)
+
+        # Exécution de la commande pour récupérer le fichier de log
+        stdin, stdout, stderr = ssh.exec_command(f'cat {remote_log_path}')
+        log_content = stdout.read()
+
+        if log_content:
+            with open(local_log_path, 'w') as f:
+                f.write(log_content.decode())
+            logging.info(f"Les logs ont été récupérés et sauvegardés dans {local_log_path}")
+            analyze_logs(log_content.decode())
+        else:
+            logging.error(f"Erreur lors de la lecture des logs : {stderr.read().decode()}")
+
+        # Fermeture de la connexion SSH
+        ssh.close()
+
+    except Exception as e:
+        logging.error(f"Une erreur s'est produite : {str(e)}")
+
+def analyze_logs(log_content):
+    # Analyse basique des logs pour détecter des erreurs
+    error_count = 0
+    for line in log_content.splitlines():
+        if "Login failed" in line or "no such user found" in line:
+            logging.warning(f"Erreur détectée : {line}")
+            error_count += 1
+
+    if error_count == 0:
+        logging.info("Aucune erreur d'accès trouvée dans les logs.")
+    else:
+        logging.info(f"{error_count} erreur(s) détectée(s) dans les logs.")
+
+if __name__ == "__main__":
+    retrieve_logs_via_ssh()
